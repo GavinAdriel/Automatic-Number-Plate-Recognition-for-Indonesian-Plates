@@ -5,11 +5,11 @@ import cv2
 from ultralytics import YOLO
 import time
 import os
-# from paddleocr import PaddleOCR
+from paddleocr import PaddleOCR
 import pandas as pd
 import re
 
-# ocr = PaddleOCR(use_angle_cls=True, lang="en")
+ocr = PaddleOCR(use_angle_cls=True, lang="en")
 
 class FrameGrabber(QThread):
     signal = pyqtSignal(QtGui.QImage, list)
@@ -67,27 +67,27 @@ class FrameGrabber(QThread):
             thresh_plate = cv2.adaptiveThreshold(gray_plate, 255, cv2.ADAPTIVE_THRESH_MEAN_C, cv2.THRESH_BINARY, 11, 7)
             filename = f"detected/license_plate_{self.saved_count}.jpg"
             cv2.imwrite(filename, thresh_plate)
-            # result_text = self.perform_ocr(thresh_plate)
-            self.write_csv("B123ZZZ")
+            result_text = self.perform_ocr(thresh_plate)
+            self.write_csv(result_text)
             self.saved_count += 1
 
-    # def perform_ocr(self, image):
-    #     results = ocr.ocr(image, rec=True)
-    #     detected_text = []
+    def perform_ocr(self, image):
+        results = ocr.ocr(image, rec=True)
+        detected_text = []
 
-    #     if results and results[0]:
-    #         for result in results[0]:
-    #             text = re.sub(r'[^a-zA-Z0-9]', '', result[1][0])
-    #             detected_text.append(text)
-    #     combineOCR = ' '.join(detected_text)
-    #     return self.validate_license_plate(combineOCR)
+        if results and results[0]:
+            for result in results[0]:
+                text = re.sub(r'[^a-zA-Z0-9]', '', result[1][0])
+                detected_text.append(text)
+        combineOCR = ' '.join(detected_text)
+        return self.validate_license_plate(combineOCR)
     
-    # def validate_license_plate(self, plate):
-    #     pattern = r'^([A-Z]{1,2}\s?\d{1,4}\s?[A-Z0]{0,3})'
-    #     match = re.match(pattern, plate)
-    #     if match:
-    #         return match.group(1)
-    #     return None
+    def validate_license_plate(self, plate):
+        pattern = r'^([A-Z]{1,2}\s?\d{1,4}\s?[A-Z0]{0,3})'
+        match = re.match(pattern, plate)
+        if match:
+            return match.group(1)
+        return None
 
     def write_csv(self, plate_text):
         f = open('plates.csv', 'a')
