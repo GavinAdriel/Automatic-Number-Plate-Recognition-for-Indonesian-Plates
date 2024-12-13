@@ -1,14 +1,20 @@
+#import lib
 from PyQt5 import QtCore, QtGui, QtWidgets
 from PyQt5.QtWidgets import QApplication, QMainWindow, QTableWidgetItem
 from PyQt5.QtCore import QTimer, pyqtSignal, QThread
+
 import cv2
 from ultralytics import YOLO
+from paddleocr import PaddleOCR
+
 import time
 import os
-from paddleocr import PaddleOCR
+
 import pandas as pd
+import numpy as np
 import re
 
+#declare OCR
 ocr = PaddleOCR(use_angle_cls=True, lang="en")
 
 class FrameGrabber(QThread):
@@ -17,11 +23,12 @@ class FrameGrabber(QThread):
     def __init__(self, parent=None):
         super(FrameGrabber, self).__init__(parent)
         self.running = True
-        self.model = YOLO("best.pt")
+        self.model = YOLO("best.pt") #load yolo model
         self.last_saved_time = time.time()
         self.save_interval = 5 
         self.saved_count = 0
 
+        #make required file and folder
         if not os.path.exists("detected"):
             os.makedirs("detected")
 
@@ -37,15 +44,14 @@ class FrameGrabber(QThread):
         while self.running and cap.isOpened():
             success, frame = cap.read()
             if success:
-                results = self.model.predict(frame, conf=0.5, iou=0.5)[0]
+                results = self.model.predict(frame, conf=0.5, iou=0.5)[0] #detect license plate
                 detections = []
 
                 for box in results.boxes:
                     x1, y1, x2, y2 = map(int, box.xyxy[0])
-                    cropped_plate = frame[y1:y2, x1:x2]
+                    cropped_plate = frame[y1:y2, x1:x2] #crop ROI
 
-                    if cropped_plate.size > 0:
-                        self.save_cropped_image(cropped_plate)
+                    self.read_save_plate(cropped_plate) #read and save plate
 
                     detections.append((self.model.names[int(box.cls[0])], box.conf[0], (x1, y1, x2, y2)))
                     cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
@@ -58,23 +64,65 @@ class FrameGrabber(QThread):
     def stop(self):
         self.running = False
         self.wait()
+    
+    #preprocess cropped plate
+    def preprocess_image(self, image):
+        # Convert to grayscale
+        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
 
-    def save_cropped_image(self, cropped_plate):
-        current_time = time.time()
-        if current_time - self.last_saved_time >= self.save_interval:
-            self.last_saved_time = current_time
-            gray_plate = cv2.cvtColor(cropped_plate, cv2.COLOR_BGR2GRAY)
-            thresh_plate = cv2.adaptiveThreshold(gray_plate, 255, cv2.ADAPTIVE_THRESH_MEAN_C, cv2.THRESH_BINARY, 11, 7)
-            filename = f"detected/license_plate_{self.saved_count}.jpg"
-            cv2.imwrite(filename, thresh_plate)
-            result_text = self.perform_ocr(thresh_plate)
-            self.write_csv(result_text)
-            self.saved_count += 1
+        # Resize the image to increase readability 
+        height, width = gray.shape
+        scale_factor = 2  # Increase the scale factor for more aggressive resizing
+        new_width = int(width * scale_factor)
+        new_height = int(height * scale_factor)
+        resized_image = cv2.resize(gray, (new_width, new_height), interpolation=cv2.INTER_CUBIC)
+        
+        # Apply Bilateral filter to remove noise
+        blurred_image = cv2.bilateralFilter(resized_image, 13, 15, 15)
 
+        # Apply thresholding with Otsu's method
+        _, binary_otsu = cv2.threshold(blurred_image, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+
+        # Sharpen the image
+        kernel_sharpening = np.array([[0, -1, 0], 
+                                    [-1, 5, -1],
+                                    [0, -1, 0]])
+        binary = cv2.filter2D(binary_otsu, -1, kernel_sharpening)
+        
+        # Apply dilation and erosion to remove noise
+        kernel = np.ones((3, 3), np.uint8)
+        binary = cv2.dilate(binary, kernel, iterations=1)
+        binary = cv2.erode(binary, kernel, iterations=1)
+        return binary
+    
+    #correct misread text
+    def correct_ocr_errors(self, plate):
+        # Correct '8' to 'B' and '0' to 'O' if misdetected
+        plate_chars = list(plate)
+        i = 0
+        while i < len(plate_chars):
+            if plate_chars[i] == '8':
+                # Check if '8' is part of the numeric section (digits only)
+                if i > 0 and plate_chars[i-1].isdigit():
+                    i += 1
+                    continue
+                # Change '8' to 'B' if not in numeric section
+                plate_chars[i] = 'B'
+            elif plate_chars[i] == '0':
+                # Replace '0' with 'O' in non-numeric contexts
+                if i == 0 or not plate_chars[i-1].isdigit():
+                    plate_chars[i] = 'O'
+            i += 1
+
+        # Join corrected characters back
+        return ''.join(plate_chars)
+    
+    #read cropped plate
     def perform_ocr(self, image):
-        results = ocr.ocr(image, rec=True)
+        results = ocr.ocr(image, rec=True) #read text
         detected_text = []
 
+        #combine detected text seperated by spaces and perform regex
         if results and results[0]:
             for result in results[0]:
                 text = re.sub(r'[^a-zA-Z0-9]', '', result[1][0])
@@ -82,15 +130,33 @@ class FrameGrabber(QThread):
         combineOCR = ' '.join(detected_text)
         return self.validate_license_plate(combineOCR)
     
-    def validate_license_plate(self, plate):
+    #validate detected text to indonesia plate format
+    def validate_license_plate(self,plate):
+        plate = self.correct_ocr_errors(plate) #correct misdetected text
+
         pattern = r'^([A-Z]{1,2}\s?\d{1,4}\s?[A-Z0]{0,3})'
         match = re.match(pattern, plate)
         if match:
-            return match.group(1)
+            return match.group(1) #return text that passed the format
         return None
 
+    #read and save cropped plate
+    def read_save_plate(self, cropped_plate):
+        current_time = time.time()
+        #do for every determined time interval(5s) if the model detect plate
+        if current_time - self.last_saved_time >= self.save_interval: 
+            self.last_saved_time = current_time
+            plate_img = self.preprocess_image(cropped_plate) 
+            filename = f"detected/license_plate_{self.saved_count}.jpg"
+            cv2.imwrite(filename, plate_img) #save preprocessed plate
+            result_text = self.perform_ocr(plate_img)
+            if result_text != None:
+                self.write_csv(result_text) #write detected plate to csv
+            self.saved_count += 1 
+
+    #append detected plate to csv
     def write_csv(self, plate_text):
-        f = open('plates.csv', 'a')
+        f = open('plates.csv', 'a') 
         f.write(f'{plate_text}\n')
         f.close()
 
@@ -150,9 +216,11 @@ class Ui_MainWindow(QMainWindow):
 
     def refresh_table(self):
         df = pd.read_csv('plates.csv')
-        df = df.iloc[-15:].sort_index(ascending=False)
-        for each_row in range(len(df)):
-            self.tableWidget.setItem(each_row,0,QTableWidgetItem(df.iloc[each_row][0]))
+        recent_data = df.tail(15).iloc[::-1]
+        self.tableWidget.clearContents()
+
+        for row, plate_number in enumerate(recent_data['PlateNumber']):
+            self.tableWidget.setItem(row, 0, QTableWidgetItem(str(plate_number)))
 
     def closeEvent(self, event):
         self.grabber.stop()
