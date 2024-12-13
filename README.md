@@ -1,4 +1,4 @@
-# Automatic-Number-Plate-Recognition-for-Indonesian-Plates-with YOLOV11 and PaddleOCR
+# Automatic Number Plate Recognition for Indonesian Plates with YOLOV11 and PaddleOCR
 
 This is a ANPR based on YOLOV11 pretrained model to detect license plate on a vehicle and PaddleOCR to handle the OCR
 
