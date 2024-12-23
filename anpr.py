@@ -205,7 +205,7 @@ class Ui_MainWindow(QMainWindow):
 
     def retranslateUi(self, MainWindow):
         _translate = QtCore.QCoreApplication.translate
-        MainWindow.setWindowTitle(_translate("MainWindow", "ANAL"))
+        MainWindow.setWindowTitle(_translate("MainWindow", "ANPR"))
     
     @QtCore.pyqtSlot(QtGui.QImage, list)
     def updateFrame(self, image, _):
