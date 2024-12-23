@@ -80,14 +80,11 @@ class FrameGrabber(QThread):
         # Apply Bilateral filter to remove noise
         blurred_image = cv2.bilateralFilter(resized_image, 13, 15, 15)
 
-        # Apply thresholding with Otsu's method
-        _, binary_otsu = cv2.threshold(blurred_image, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-
         # Sharpen the image
         kernel_sharpening = np.array([[0, -1, 0], 
                                     [-1, 5, -1],
                                     [0, -1, 0]])
-        binary = cv2.filter2D(binary_otsu, -1, kernel_sharpening)
+        binary = cv2.filter2D(blurred_image, -1, kernel_sharpening)
         
         # Apply dilation and erosion to remove noise
         kernel = np.ones((3, 3), np.uint8)
