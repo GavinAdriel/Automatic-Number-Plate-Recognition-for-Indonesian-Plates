@@ -4,7 +4,20 @@ This is a ANPR based on YOLOV11 pretrained model to detect license plate on a ve
 
 ## Model
 
-A licensed plate detector was used to detect license plates. The model was trained with Yolov11 using [this dataset](https://universe.roboflow.com/roboflow-universe-projects/license-plate-recognition-rxg4e/dataset/4). 
+A licensed plate detector was used to detect license plates. The model was trained with Yolov11 using [this dataset](https://universe.roboflow.com/roboflow-universe-projects/license-plate-recognition-rxg4e/dataset/4).
+
+**Model Training CLI**
+
+* Download the dataset from roboflow and provide the path to the data.yaml
+``` bash
+yolo detect train data=path/to/dataset.yaml model=yolo11n.pt epochs=100 imgsz=640
+```
+**Model Validation CLI**
+
+* Download the dataset from roboflow and provide the path to the data.yaml
+``` bash
+yolo val model=path/to/best.pt data=path/to/dataset.yaml
+```
 
 ## Project Setup
 
